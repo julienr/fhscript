@@ -20,7 +20,14 @@ class EOFException : public std::exception {
 };
 
 class Panic : public std::exception {
-    virtual const char* what() const noexcept override { return "Panic"; }
+public:
+    Panic(const std::string& reason) : reason_(reason) {}
+protected:
+    virtual const char* what() const noexcept override {
+        return reason_.c_str();
+    }
+private:
+    std::string reason_;
 };
 
 class SourceFile {
@@ -58,6 +65,8 @@ private:
 struct Token {
     enum class Type {
         DecimalLiteral,
+        Keyword,
+        Identifier,
         OtherPunctuator
     };
     Token (Type type, const string& val) : type(type), value(val) {}
@@ -70,7 +79,7 @@ struct Token {
         } else if (type == Type::OtherPunctuator) {
             return "OtherPunctuator[" + value + "]";
         } else {
-            throw Panic();
+            throw Panic("Unhandled type");
         }
     }
 };
@@ -102,8 +111,8 @@ vector<Token> lex(SourceFile* file) {
         } else if (c == ' ' || c == '\n') {
             file->Next();
         } else {
-            std::cout << "Unhandled input: " << static_cast<int>(c) << std::endl;
-            throw Panic();
+            std::cout << "Unhandled input: '" << c << "' (code=" << static_cast<int>(c) << ")" << std::endl;
+            throw Panic("Unhandled input");
         }
     }
     return tokens;
