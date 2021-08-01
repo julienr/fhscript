@@ -51,12 +51,12 @@ private:
     std::ifstream file_;
 };
 
-struct Symbol {
+struct Token {
     enum class Type {
         DecimalLiteral,
         OtherPunctuator
     };
-    Symbol (Type type, const string& val) : type(type), value(val) {}
+    Token (Type type, const string& val) : type(type), value(val) {}
     Type type;
     string value;
 
@@ -71,7 +71,7 @@ struct Symbol {
     }
 };
 
-Symbol ReadDigit(SourceFile* file) {
+Token ReadDigit(SourceFile* file) {
     string digit = "";
     while (true) {
         char c = file->Peek();
@@ -81,20 +81,20 @@ Symbol ReadDigit(SourceFile* file) {
         c = file->Next();
         digit.push_back(c);
     }
-    return Symbol(Symbol::Type::DecimalLiteral, digit);
+    return Token(Token::Type::DecimalLiteral, digit);
 }
 
-vector<Symbol> lex(SourceFile* file) {
-    vector<Symbol> symbols;
+vector<Token> lex(SourceFile* file) {
+    vector<Token> tokens;
     while (true) {
         const char c = file->Peek();
         if (file->IsEnd()) {
             break;
         }
         if (std::isdigit(static_cast<int>(c))) {
-            symbols.push_back(ReadDigit(file));
+            tokens.push_back(ReadDigit(file));
         } else if (c == '+' || c == '-' || c == ';') {
-            symbols.push_back(Symbol(Symbol::Type::OtherPunctuator, string(1, file->Next())));
+            tokens.push_back(Token(Token::Type::OtherPunctuator, string(1, file->Next())));
         } else if (c == ' ' || c == '\n') {
             file->Next();
         } else {
@@ -102,13 +102,13 @@ vector<Symbol> lex(SourceFile* file) {
             throw Panic();
         }
     }
-    return symbols;
+    return tokens;
 }
 
 int main () {
     SourceFile file("1.js");
-    const auto symbols = lex(&file);
-    for (const Symbol& s : symbols) {
+    const auto tokens = lex(&file);
+    for (const Token& s : tokens) {
         std::cout << s.ToString() << ", ";
     }
     std::cout << std::endl;
