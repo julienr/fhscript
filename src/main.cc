@@ -15,9 +15,13 @@ class FileNotFoundException : public std::exception {
     }
 };
 
-class EOFException : public std::exception {};
+class EOFException : public std::exception {
+    virtual const char* what() const noexcept override { return "EOF"; }
+};
 
-class Panic : public std::exception {};
+class Panic : public std::exception {
+    virtual const char* what() const noexcept override { return "Panic"; }
+};
 
 class SourceFile {
 public:
@@ -98,7 +102,7 @@ vector<Token> lex(SourceFile* file) {
         } else if (c == ' ' || c == '\n') {
             file->Next();
         } else {
-            std::cout << static_cast<int>(c) << std::endl;
+            std::cout << "Unhandled input: " << static_cast<int>(c) << std::endl;
             throw Panic();
         }
     }
@@ -111,7 +115,7 @@ int main (int argc, char** argv) {
         return EXIT_FAILURE;
     }
     const std::string program_fname = argv[1];
-    std::cout << "Reading " << program_fname;
+    std::cout << "Reading " << program_fname << std::endl;
     SourceFile file(program_fname);
     const auto tokens = lex(&file);
     for (const Token& s : tokens) {
