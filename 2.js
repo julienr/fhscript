@@ -1,13 +1,12 @@
-function my_function (x, y) {
+function my_function x y {
   while x > 0 {
-    for i in range(5, 10) {
-      x = x - 1
-      print('42')
-    }
+    x = x - 1
+    call print '42'
   }
+  return x
 }
 
-function main () {
+function main {
   var x = 2 + 3
-  x = my_function(x, 2)
+  x = call my_function x 2
 }
