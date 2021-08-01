@@ -105,6 +105,8 @@ const std::unordered_map<int, Token::Type> kSimpleTokens = {
     {static_cast<int>(')'), Token::Type::Separator},
     {static_cast<int>('{'), Token::Type::Separator},
     {static_cast<int>('}'), Token::Type::Separator},
+    {static_cast<int>(','), Token::Type::Separator},
+    {static_cast<int>('\''), Token::Type::Separator},
 };
 
 Token ReadDigit(SourceFile *file) {
@@ -174,7 +176,7 @@ int main(int argc, char **argv) {
   SourceFile file(program_fname);
   const auto tokens = lex(&file);
   for (const Token &s : tokens) {
-    std::cout << s.ToString() << ", ";
+    std::cout << s.ToString() << " ";
   }
   std::cout << std::endl;
   return EXIT_SUCCESS;
