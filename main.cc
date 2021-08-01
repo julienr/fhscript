@@ -105,8 +105,14 @@ vector<Token> lex(SourceFile* file) {
     return tokens;
 }
 
-int main () {
-    SourceFile file("1.js");
+int main (int argc, char** argv) {
+    if (argc <= 1) {
+        std::cerr << "Usage: ./main <program>";
+        return EXIT_FAILURE;
+    }
+    const std::string program_fname = argv[1];
+    std::cout << "Reading " << program_fname;
+    SourceFile file(program_fname);
     const auto tokens = lex(&file);
     for (const Token& s : tokens) {
         std::cout << s.ToString() << ", ";
