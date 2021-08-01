@@ -2,11 +2,13 @@
 #include <exception>
 #include <fstream>
 #include <iostream>
+#include <queue>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
+using std::queue;
 using std::string;
 using std::vector;
 
@@ -64,10 +66,21 @@ struct Token {
   enum class Type {
     DecimalLiteral,
     OtherPunctuator,
-    Keyword,
+    KwdFunction,
+    KwdVar,
+    KwdWhile,
     Identifier,
-    Operator,
-    Separator
+    OpPlus,
+    OpMinus,
+    OpEqual,
+    OpGreaterThan,
+    SepLeftPar,
+    SepRightPar,
+    SepLeftBrace,
+    SepRightBrace,
+    SepSemicolon,
+    SepComma,
+    SepQuote
   };
   Token(Type type, const string &val) : type(type), value(val) {}
   Type type;
@@ -79,34 +92,48 @@ struct Token {
       return "DecimalLiteral[" + value + "]";
     case Type::OtherPunctuator:
       return "OtherPunctuator[" + value + "]";
-    case Type::Keyword:
+    case Type::KwdFunction:
+    case Type::KwdVar:
+    case Type::KwdWhile:
       return "Keyword[" + value + "]";
     case Type::Identifier:
       return "Identifier[" + value + "]";
-    case Type::Operator:
+    case Type::OpPlus:
+    case Type::OpMinus:
+    case Type::OpEqual:
+    case Type::OpGreaterThan:
       return value;
-    case Type::Separator:
+    case Type::SepLeftPar:
+    case Type::SepRightPar:
+    case Type::SepLeftBrace:
+    case Type::SepRightBrace:
+    case Type::SepSemicolon:
+    case Type::SepComma:
+    case Type::SepQuote:
       return value;
     default:
-      throw Panic("Unhandled type");
+      throw Panic(std::string("Unhandled type: ") + value);
     }
   }
 };
 
-const std::unordered_set<string> kKeywords = {"function", "var", "while",
-                                              "for"};
+const std::unordered_map<string, Token::Type> kKeywords = {
+    {"function", Token::Type::KwdFunction},
+    {"var", Token::Type::KwdVar},
+    {"while", Token::Type::KwdWhile}};
 
 const std::unordered_map<int, Token::Type> kSimpleTokens = {
-    {static_cast<int>('+'), Token::Type::Operator},
-    {static_cast<int>('-'), Token::Type::Operator},
-    {static_cast<int>('='), Token::Type::Operator},
-    {static_cast<int>('>'), Token::Type::Operator},
-    {static_cast<int>('('), Token::Type::Separator},
-    {static_cast<int>(')'), Token::Type::Separator},
-    {static_cast<int>('{'), Token::Type::Separator},
-    {static_cast<int>('}'), Token::Type::Separator},
-    {static_cast<int>(','), Token::Type::Separator},
-    {static_cast<int>('\''), Token::Type::Separator},
+    {static_cast<int>('+'), Token::Type::OpPlus},
+    {static_cast<int>('-'), Token::Type::OpMinus},
+    {static_cast<int>('='), Token::Type::OpEqual},
+    {static_cast<int>('>'), Token::Type::OpGreaterThan},
+    {static_cast<int>('('), Token::Type::SepLeftPar},
+    {static_cast<int>(')'), Token::Type::SepRightPar},
+    {static_cast<int>('{'), Token::Type::SepLeftBrace},
+    {static_cast<int>('}'), Token::Type::SepRightBrace},
+    {static_cast<int>(';'), Token::Type::SepSemicolon},
+    {static_cast<int>(','), Token::Type::SepComma},
+    {static_cast<int>('\''), Token::Type::SepQuote},
 };
 
 Token ReadDigit(SourceFile *file) {
@@ -135,7 +162,7 @@ Token ReadLiteral(SourceFile *file) {
     lit.push_back(c);
   }
   if (kKeywords.find(lit) != kKeywords.end()) {
-    return Token(Token::Type::Keyword, lit);
+    return Token(kKeywords.at(lit), lit);
   } else {
     return Token(Token::Type::Identifier, lit);
   }
@@ -164,6 +191,51 @@ vector<Token> lex(SourceFile *file) {
     }
   }
   return tokens;
+}
+
+class AST {
+public:
+  AST(const vector<Token> &tokens);
+
+  struct Node {
+    Token token;
+    vector<Node> children;
+  };
+
+private:
+  vector<Node> functions;
+};
+
+Token AssertNext(queue<Token> &tokens, Token::Type type) {
+  Token t = tokens.front();
+  if (t.type != type) {
+    throw Panic("Incorrect type");
+  }
+  tokens.pop();
+  return t;
+}
+
+AST::Node ConsumeStatement(queue<Token> &tokens) {}
+
+AST::Node ConsumeFunction(queue<Token> &tokens) {
+  AssertNext(tokens, Token::Type::KwdFunction);
+  auto name = AssertNext(tokens, Token::Type::Identifier);
+  // Arguments
+  vector<Token> arguments;
+  while (tokens.front().type != Token::Type::SepLeftBrace) {
+    arguments.push_back(AssertNext(tokens, Token::Type::Identifier));
+  }
+
+  AssertNext(tokens, Token::Type::SepLeftBrace);
+  // Body
+  AssertNext(tokens, Token::Type::SepRightBrace);
+}
+
+AST::AST(const vector<Token> &tokens) {
+  queue<Token> to_consume;
+  for (const Token &t : tokens) {
+    to_consume.push(t);
+  }
 }
 
 int main(int argc, char **argv) {
