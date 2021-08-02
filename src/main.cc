@@ -13,27 +13,27 @@ using std::string;
 using std::vector;
 
 class FileNotFoundException : public std::exception {
-  virtual const char *what() const throw() { return "File not found"; }
+  virtual const char* what() const throw() { return "File not found"; }
 };
 
 class EOFException : public std::exception {
-  virtual const char *what() const noexcept override { return "EOF"; }
+  virtual const char* what() const noexcept override { return "EOF"; }
 };
 
 class Panic : public std::exception {
-public:
-  Panic(const std::string &reason) : reason_(reason) {}
+ public:
+  Panic(const std::string& reason) : reason_(reason) {}
 
-protected:
-  virtual const char *what() const noexcept override { return reason_.c_str(); }
+ protected:
+  virtual const char* what() const noexcept override { return reason_.c_str(); }
 
-private:
+ private:
   std::string reason_;
 };
 
 class SourceFile {
-public:
-  SourceFile(const string &filename) {
+ public:
+  SourceFile(const string& filename) {
     file_.open(filename.c_str(), std::ios::in | std::ios::binary);
     if (!file_.is_open()) {
       throw FileNotFoundException();
@@ -58,7 +58,7 @@ public:
     return c;
   }
 
-private:
+ private:
   std::ifstream file_;
 };
 
@@ -82,37 +82,37 @@ struct Token {
     SepComma,
     SepQuote
   };
-  Token(Type type, const string &val) : type(type), value(val) {}
+  Token(Type type, const string& val) : type(type), value(val) {}
   Type type;
   string value;
 
   const string ToString() const {
     switch (type) {
-    case Type::DecimalLiteral:
-      return "DecimalLiteral[" + value + "]";
-    case Type::OtherPunctuator:
-      return "OtherPunctuator[" + value + "]";
-    case Type::KwdFunction:
-    case Type::KwdVar:
-    case Type::KwdWhile:
-      return "Keyword[" + value + "]";
-    case Type::Identifier:
-      return "Identifier[" + value + "]";
-    case Type::OpPlus:
-    case Type::OpMinus:
-    case Type::OpEqual:
-    case Type::OpGreaterThan:
-      return value;
-    case Type::SepLeftPar:
-    case Type::SepRightPar:
-    case Type::SepLeftBrace:
-    case Type::SepRightBrace:
-    case Type::SepSemicolon:
-    case Type::SepComma:
-    case Type::SepQuote:
-      return value;
-    default:
-      throw Panic(std::string("Unhandled type: ") + value);
+      case Type::DecimalLiteral:
+        return "DecimalLiteral[" + value + "]";
+      case Type::OtherPunctuator:
+        return "OtherPunctuator[" + value + "]";
+      case Type::KwdFunction:
+      case Type::KwdVar:
+      case Type::KwdWhile:
+        return "Keyword[" + value + "]";
+      case Type::Identifier:
+        return "Identifier[" + value + "]";
+      case Type::OpPlus:
+      case Type::OpMinus:
+      case Type::OpEqual:
+      case Type::OpGreaterThan:
+        return value;
+      case Type::SepLeftPar:
+      case Type::SepRightPar:
+      case Type::SepLeftBrace:
+      case Type::SepRightBrace:
+      case Type::SepSemicolon:
+      case Type::SepComma:
+      case Type::SepQuote:
+        return value;
+      default:
+        throw Panic(std::string("Unhandled type: ") + value);
     }
   }
 };
@@ -136,7 +136,7 @@ const std::unordered_map<int, Token::Type> kSimpleTokens = {
     {static_cast<int>('\''), Token::Type::SepQuote},
 };
 
-Token ReadDigit(SourceFile *file) {
+Token ReadDigit(SourceFile* file) {
   string digit = "";
   while (true) {
     char c = file->Peek();
@@ -150,7 +150,7 @@ Token ReadDigit(SourceFile *file) {
 }
 
 // Reads either an Identifier or a Keyword
-Token ReadLiteral(SourceFile *file) {
+Token ReadLiteral(SourceFile* file) {
   string lit = "";
   while (true) {
     char c = file->Peek();
@@ -168,7 +168,7 @@ Token ReadLiteral(SourceFile *file) {
   }
 }
 
-vector<Token> lex(SourceFile *file) {
+vector<Token> lex(SourceFile* file) {
   vector<Token> tokens;
   while (true) {
     const char c = file->Peek();
@@ -194,19 +194,19 @@ vector<Token> lex(SourceFile *file) {
 }
 
 class AST {
-public:
-  AST(const vector<Token> &tokens);
+ public:
+  AST(const vector<Token>& tokens);
 
   struct Node {
     Token token;
     vector<Node> children;
   };
 
-private:
+ private:
   vector<Node> functions;
 };
 
-Token AssertNext(queue<Token> &tokens, Token::Type type) {
+Token AssertNext(queue<Token>& tokens, Token::Type type) {
   Token t = tokens.front();
   if (t.type != type) {
     throw Panic("Incorrect type");
@@ -215,9 +215,9 @@ Token AssertNext(queue<Token> &tokens, Token::Type type) {
   return t;
 }
 
-AST::Node ConsumeStatement(queue<Token> &tokens) {}
+AST::Node ConsumeStatement(queue<Token>& tokens) {}
 
-AST::Node ConsumeFunction(queue<Token> &tokens) {
+AST::Node ConsumeFunction(queue<Token>& tokens) {
   AssertNext(tokens, Token::Type::KwdFunction);
   auto name = AssertNext(tokens, Token::Type::Identifier);
   // Arguments
@@ -231,14 +231,14 @@ AST::Node ConsumeFunction(queue<Token> &tokens) {
   AssertNext(tokens, Token::Type::SepRightBrace);
 }
 
-AST::AST(const vector<Token> &tokens) {
+AST::AST(const vector<Token>& tokens) {
   queue<Token> to_consume;
-  for (const Token &t : tokens) {
+  for (const Token& t : tokens) {
     to_consume.push(t);
   }
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   if (argc <= 1) {
     std::cerr << "Usage: ./main <program>";
     return EXIT_FAILURE;
@@ -247,7 +247,7 @@ int main(int argc, char **argv) {
   std::cout << "Reading " << program_fname << std::endl;
   SourceFile file(program_fname);
   const auto tokens = lex(&file);
-  for (const Token &s : tokens) {
+  for (const Token& s : tokens) {
     std::cout << s.ToString() << " ";
   }
   std::cout << std::endl;
