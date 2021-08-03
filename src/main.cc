@@ -10,6 +10,7 @@
 
 using std::queue;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 class FileNotFoundException : public std::exception {
@@ -34,8 +35,8 @@ class Panic : public std::exception {
 struct Location {
   Location(int line, int col) : line(line), col(col) {}
 
-  int line;
-  int col;
+  int line = -1;
+  int col = -1;
 
   std::string ToString() const {
     return "line=" + std::to_string(line) + ", col=" + std::to_string(col);
@@ -61,15 +62,15 @@ class SourceFile {
   }
 
   std::tuple<char, Location> Next() {
-    if (IsEnd()) {
-      throw EOFException();
-    }
     const char c = _get();
     return std::make_tuple(c, Location(line_, col_));
   }
 
  private:
   char _get() {
+    if (IsEnd()) {
+      throw EOFException();
+    }
     char c;
     file_.get(c);
     if (c == '\n') {
@@ -90,8 +91,9 @@ struct Token {
     DecimalLiteral,
     OtherPunctuator,
     KwdFunction,
-    KwdVar,
     KwdWhile,
+    KwdCall,
+    KwdReturn,
     Identifier,
     OpPlus,
     OpMinus,
@@ -119,10 +121,12 @@ struct Token {
         return "OtherPunctuator";
       case Type::KwdFunction:
         return "KwdFunction";
-      case Type::KwdVar:
-        return "KwdVar";
       case Type::KwdWhile:
         return "KwdWhile";
+      case Type::KwdCall:
+        return "KwdCall";
+      case Type::KwdReturn:
+        return "KwdReturn";
       case Type::Identifier:
         return "Identifier";
       case Type::OpPlus:
@@ -157,8 +161,9 @@ struct Token {
       case Type::OtherPunctuator:
         return "OtherPunctuator[" + value + "]";
       case Type::KwdFunction:
-      case Type::KwdVar:
       case Type::KwdWhile:
+      case Type::KwdCall:
+      case Type::KwdReturn:
         return "Keyword[" + value + "]";
       case Type::Identifier:
         return "Identifier[" + value + "]";
@@ -183,8 +188,9 @@ struct Token {
 
 const std::unordered_map<string, Token::Type> kKeywords = {
     {"function", Token::Type::KwdFunction},
-    {"var", Token::Type::KwdVar},
-    {"while", Token::Type::KwdWhile}};
+    {"while", Token::Type::KwdWhile},
+    {"call", Token::Type::KwdCall},
+    {"return", Token::Type::KwdReturn}};
 
 const std::unordered_map<int, Token::Type> kSimpleTokens = {
     {static_cast<int>('+'), Token::Type::OpPlus},
@@ -268,15 +274,42 @@ vector<Token> lex(SourceFile* file) {
 }
 
 struct ASTNode {
-  Token token;
-  vector<ASTNode> children;
+  // Token token;
+  // vector<ASTNode> children;
+  virtual ~ASTNode() {}
 
   void Visit(const std::function<void(const ASTNode& node)>& visitor) const {
     visitor(*this);
-    for (const ASTNode& node : children) {
-      node.Visit(visitor);
-    }
+    // for (const ASTNode& node : children) {
+    // node.Visit(visitor);
+    //}
   }
+
+  virtual std::string ToString() const = 0;
+};
+
+struct FunctionNode : public ASTNode {
+  virtual std::string ToString() const override { return "Function"; }
+};
+
+struct WhileNode : public ASTNode {
+  virtual std::string ToString() const override { return "While"; }
+};
+
+struct BlockNode : public ASTNode {
+  virtual std::string ToString() const override { return "Block"; }
+};
+
+struct AssignmentNode : public ASTNode {
+  virtual std::string ToString() const override { return "Assignment"; }
+};
+
+struct ExpressionNode : public ASTNode {
+  virtual std::string ToString() const override { return "Expression"; }
+};
+
+struct ReturnNode : public ASTNode {
+  virtual std::string ToString() const override { return "Return"; }
 };
 
 class AST {
@@ -284,16 +317,19 @@ class AST {
   AST(const vector<Token>& tokens);
 
   void Visit(const std::function<void(const ASTNode& node)>& visitor) const {
-    for (const ASTNode& node : functions) {
-      node.Visit(visitor);
+    for (const auto& node : functions) {
+      node->Visit(visitor);
     }
   }
 
  private:
-  vector<ASTNode> functions;
+  vector<unique_ptr<ASTNode>> functions;
 };
 
 Token AssertNext(queue<Token>& tokens, Token::Type type) {
+  if (tokens.size() == 0) {
+    throw Panic("End of file while looking for " + Token::TypeToString(type));
+  }
   Token t = tokens.front();
   if (t.type != type) {
     throw Panic("Incorrect type, expected " + Token::TypeToString(type) +
@@ -304,7 +340,55 @@ Token AssertNext(queue<Token>& tokens, Token::Type type) {
   return t;
 }
 
-ASTNode ConsumeStatement(queue<Token>& tokens) {
+unique_ptr<ExpressionNode> ConsumeExpression(queue<Token>& tokens,
+                                             Token::Type endMarker) {
+  vector<Token> statement;
+  while (tokens.size() > 0 && tokens.front().type != endMarker) {
+    statement.push_back(tokens.front());
+    tokens.pop();
+  }
+  return std::make_unique<ExpressionNode>();
+}
+
+unique_ptr<BlockNode> ConsumeBlock(queue<Token>& tokens);
+
+unique_ptr<ASTNode> ConsumeStatement(queue<Token>& tokens) {
+  if (tokens.size() == 0) {
+    throw Panic("End of file reached");
+  }
+  const Token first = tokens.front();
+  tokens.pop();
+
+  if (first.type == Token::Type::KwdWhile) {
+    // While loop
+    auto expression = ConsumeExpression(tokens, Token::Type::SepLeftBrace);
+    auto body = ConsumeBlock(tokens);
+    return std::make_unique<WhileNode>();
+  } else if (first.type == Token::Type::KwdCall) {
+    // Function call
+    const Token name = AssertNext(tokens, Token::Type::Identifier);
+    // TODO: Consume arguments
+    while (tokens.size() > 0 &&
+           tokens.front().type != Token::Type::SepSemicolon) {
+      tokens.pop();
+    }
+    AssertNext(tokens, Token::Type::SepSemicolon);
+    return std::make_unique<FunctionNode>();
+  } else if (first.type == Token::Type::Identifier) {
+    // Variable assignment
+    AssertNext(tokens, Token::Type::OpEqual);
+    auto expression = ConsumeExpression(tokens, Token::Type::SepSemicolon);
+    AssertNext(tokens, Token::Type::SepSemicolon);
+    return std::make_unique<AssignmentNode>();
+  } else if (first.type == Token::Type::KwdReturn) {
+    auto expression = ConsumeExpression(tokens, Token::Type::SepSemicolon);
+    AssertNext(tokens, Token::Type::SepSemicolon);
+    return std::make_unique<ReturnNode>();
+  } else {
+    throw Panic("Invalid statement starting with " +
+                Token::TypeToString(first.type));
+  }
+  /*
   vector<Token> statement;
   while (tokens.size() > 0 &&
          tokens.front().type != Token::Type::SepSemicolon) {
@@ -312,12 +396,24 @@ ASTNode ConsumeStatement(queue<Token>& tokens) {
     tokens.pop();
   }
   AssertNext(tokens, Token::Type::SepSemicolon);
-  return ASTNode{// TODO: Placeholder
-                 .token =
-                     Token(Token::Type::SepSemicolon, ";", Location(42, 42))};
+  */
+  // return ASTNode{// TODO: Placeholder
+  //.token =
+  // Token(Token::Type::SepSemicolon, ";", Location(42, 42))};
 }
 
-ASTNode ConsumeFunction(queue<Token>& tokens) {
+unique_ptr<BlockNode> ConsumeBlock(queue<Token>& tokens) {
+  AssertNext(tokens, Token::Type::SepLeftBrace);
+  vector<unique_ptr<ASTNode>> statements;
+  while (tokens.size() > 0 &&
+         tokens.front().type != Token::Type::SepRightBrace) {
+    statements.push_back(ConsumeStatement(tokens));
+  }
+  AssertNext(tokens, Token::Type::SepRightBrace);
+  return std::make_unique<BlockNode>();
+}
+
+unique_ptr<FunctionNode> ConsumeFunction(queue<Token>& tokens) {
   auto function = AssertNext(tokens, Token::Type::KwdFunction);
   auto name = AssertNext(tokens, Token::Type::Identifier);
   // Arguments
@@ -326,15 +422,8 @@ ASTNode ConsumeFunction(queue<Token>& tokens) {
          tokens.front().type != Token::Type::SepLeftBrace) {
     arguments.push_back(AssertNext(tokens, Token::Type::Identifier));
   }
-
-  AssertNext(tokens, Token::Type::SepLeftBrace);
-  vector<ASTNode> statements;
-  while (tokens.size() > 0 &&
-         tokens.front().type != Token::Type::SepRightBrace) {
-    statements.push_back(ConsumeStatement(tokens));
-  }
-  AssertNext(tokens, Token::Type::SepRightBrace);
-  return ASTNode{.token = function};
+  auto body = ConsumeBlock(tokens);
+  return std::make_unique<FunctionNode>();
 }
 
 AST::AST(const vector<Token>& tokens) {
@@ -343,7 +432,7 @@ AST::AST(const vector<Token>& tokens) {
     to_consume.push(t);
   }
 
-  while (tokens.size() > 0) {
+  while (to_consume.size() > 0) {
     functions.push_back(ConsumeFunction(to_consume));
   }
 }
@@ -363,8 +452,7 @@ int main(int argc, char** argv) {
   std::cout << std::endl;
 
   AST ast(tokens);
-  ast.Visit([](const ASTNode& node) {
-    std::cout << Token::TypeToString(node.token.type) << std::endl;
-  });
+  ast.Visit(
+      [](const ASTNode& node) { std::cout << node.ToString() << std::endl; });
   return EXIT_SUCCESS;
 }
