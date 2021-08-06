@@ -8,6 +8,15 @@
 #include <unordered_set>
 #include <vector>
 
+#define STR(x) #x
+#define CHECK(x)                                                              \
+  if (!(x)) {                                                                 \
+    printf(                                                                   \
+        "My custom assertion failed: (%s), function %s, file %s, line %d.\n", \
+        STR(x), __PRETTY_FUNCTION__, __FILE__, __LINE__);                     \
+    abort();                                                                  \
+  }
+
 using std::queue;
 using std::string;
 using std::unique_ptr;
@@ -288,8 +297,22 @@ struct ASTNode {
   virtual std::string ToString() const = 0;
 };
 
+struct BlockNode;
+
 struct FunctionNode : public ASTNode {
-  virtual std::string ToString() const override { return "Function"; }
+  FunctionNode(const Token& name, vector<Token> arguments,
+               unique_ptr<BlockNode> body)
+      : name(name), arguments(std::move(arguments)), body(std::move(body)) {
+    CHECK(name.type == Token::Type::Identifier);
+  }
+  Token name;
+  vector<Token> arguments;
+  unique_ptr<BlockNode> body;
+
+  // TODO: Store arguments and body
+  virtual std::string ToString() const override {
+    return std::string("Function(") + name.value + ")";
+  }
 };
 
 struct WhileNode : public ASTNode {
@@ -310,6 +333,10 @@ struct ExpressionNode : public ASTNode {
 
 struct ReturnNode : public ASTNode {
   virtual std::string ToString() const override { return "Return"; }
+};
+
+struct FunctionCallNode : public ASTNode {
+  virtual std::string ToString() const override { return "FunctionCall"; }
 };
 
 class AST {
@@ -373,7 +400,7 @@ unique_ptr<ASTNode> ConsumeStatement(queue<Token>& tokens) {
       tokens.pop();
     }
     AssertNext(tokens, Token::Type::SepSemicolon);
-    return std::make_unique<FunctionNode>();
+    return std::make_unique<FunctionCallNode>();
   } else if (first.type == Token::Type::Identifier) {
     // Variable assignment
     AssertNext(tokens, Token::Type::OpEqual);
@@ -423,7 +450,8 @@ unique_ptr<FunctionNode> ConsumeFunction(queue<Token>& tokens) {
     arguments.push_back(AssertNext(tokens, Token::Type::Identifier));
   }
   auto body = ConsumeBlock(tokens);
-  return std::make_unique<FunctionNode>();
+  return std::make_unique<FunctionNode>(name, std::move(arguments),
+                                        std::move(body));
 }
 
 AST::AST(const vector<Token>& tokens) {
