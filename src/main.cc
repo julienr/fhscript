@@ -494,8 +494,17 @@ AST::AST(const vector<Token>& tokens) {
 
 class PrintVisitor : public Visitor {
  public:
-  void enter(const ASTNode& node) { std::cout << node.ToString() << std::endl; }
-  void exit(const ASTNode& node) {}
+  void enter(const ASTNode& node) {
+    for (int i = 0; i < indent_; ++i) {
+      std::cout << "  ";
+    }
+    std::cout << node.ToString() << std::endl;
+    indent_++;
+  }
+  void exit(const ASTNode& node) { indent_--; }
+
+ private:
+  int indent_ = 0;
 };
 
 int main(int argc, char** argv) {
