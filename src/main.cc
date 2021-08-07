@@ -346,16 +346,29 @@ struct FunctionNode : public ASTNode {
   }
 };
 
+struct ExpressionNode : public ASTNode {
+  virtual std::string ToString() const override { return "Expression"; }
+};
+
 struct WhileNode : public ASTNode {
+  WhileNode(unique_ptr<ExpressionNode> expression, unique_ptr<BlockNode> body)
+      : expression(std::move(expression)), body(std::move(body)) {}
+
+  unique_ptr<ExpressionNode> expression;
+  unique_ptr<BlockNode> body;
+
   virtual std::string ToString() const override { return "While"; }
+
+  virtual void Visit(Visitor* visitor) const override {
+    visitor->enter(*this);
+    expression->Visit(visitor);
+    body->Visit(visitor);
+    visitor->exit(*this);
+  }
 };
 
 struct AssignmentNode : public ASTNode {
   virtual std::string ToString() const override { return "Assignment"; }
-};
-
-struct ExpressionNode : public ASTNode {
-  virtual std::string ToString() const override { return "Expression"; }
 };
 
 struct ReturnNode : public ASTNode {
@@ -417,7 +430,7 @@ unique_ptr<ASTNode> ConsumeStatement(queue<Token>& tokens) {
     // While loop
     auto expression = ConsumeExpression(tokens, Token::Type::SepLeftBrace);
     auto body = ConsumeBlock(tokens);
-    return std::make_unique<WhileNode>();
+    return std::make_unique<WhileNode>(std::move(expression), std::move(body));
   } else if (first.type == Token::Type::KwdCall) {
     // Function call
     const Token name = AssertNext(tokens, Token::Type::Identifier);
