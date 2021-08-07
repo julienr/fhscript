@@ -282,22 +282,47 @@ vector<Token> lex(SourceFile* file) {
   return tokens;
 }
 
+struct ASTNode;
+
+class Visitor {
+ public:
+  ~Visitor() {}
+  virtual void enter(const ASTNode& node) = 0;
+  virtual void exit(const ASTNode& node) = 0;
+};
+
 struct ASTNode {
   // Token token;
   // vector<ASTNode> children;
   virtual ~ASTNode() {}
 
-  void Visit(const std::function<void(const ASTNode& node)>& visitor) const {
-    visitor(*this);
+  virtual void Visit(Visitor* visitor) const {
+    visitor->enter(*this);
     // for (const ASTNode& node : children) {
     // node.Visit(visitor);
     //}
+    visitor->exit(*this);
   }
 
   virtual std::string ToString() const = 0;
 };
 
-struct BlockNode;
+struct BlockNode : public ASTNode {
+  BlockNode(vector<unique_ptr<ASTNode>> statements)
+      : statements(std::move(statements)) {}
+
+  vector<unique_ptr<ASTNode>> statements;
+
+  virtual std::string ToString() const override { return "Block"; }
+
+  virtual void Visit(Visitor* visitor) const override {
+    visitor->enter(*this);
+    for (const auto& node : statements) {
+      node->Visit(visitor);
+    }
+    visitor->exit(*this);
+  }
+};
 
 struct FunctionNode : public ASTNode {
   FunctionNode(const Token& name, vector<Token> arguments,
@@ -313,14 +338,16 @@ struct FunctionNode : public ASTNode {
   virtual std::string ToString() const override {
     return std::string("Function(") + name.value + ")";
   }
+
+  virtual void Visit(Visitor* visitor) const override {
+    visitor->enter(*this);
+    body->Visit(visitor);
+    visitor->exit(*this);
+  }
 };
 
 struct WhileNode : public ASTNode {
   virtual std::string ToString() const override { return "While"; }
-};
-
-struct BlockNode : public ASTNode {
-  virtual std::string ToString() const override { return "Block"; }
 };
 
 struct AssignmentNode : public ASTNode {
@@ -343,7 +370,7 @@ class AST {
  public:
   AST(const vector<Token>& tokens);
 
-  void Visit(const std::function<void(const ASTNode& node)>& visitor) const {
+  void Visit(Visitor* visitor) const {
     for (const auto& node : functions) {
       node->Visit(visitor);
     }
@@ -437,7 +464,7 @@ unique_ptr<BlockNode> ConsumeBlock(queue<Token>& tokens) {
     statements.push_back(ConsumeStatement(tokens));
   }
   AssertNext(tokens, Token::Type::SepRightBrace);
-  return std::make_unique<BlockNode>();
+  return std::make_unique<BlockNode>(std::move(statements));
 }
 
 unique_ptr<FunctionNode> ConsumeFunction(queue<Token>& tokens) {
@@ -465,6 +492,12 @@ AST::AST(const vector<Token>& tokens) {
   }
 }
 
+class PrintVisitor : public Visitor {
+ public:
+  void enter(const ASTNode& node) { std::cout << node.ToString() << std::endl; }
+  void exit(const ASTNode& node) {}
+};
+
 int main(int argc, char** argv) {
   if (argc <= 1) {
     std::cerr << "Usage: ./main <program>";
@@ -479,8 +512,9 @@ int main(int argc, char** argv) {
   }
   std::cout << std::endl;
 
+  PrintVisitor visitor;
+
   AST ast(tokens);
-  ast.Visit(
-      [](const ASTNode& node) { std::cout << node.ToString() << std::endl; });
+  ast.Visit(&visitor);
   return EXIT_SUCCESS;
 }
