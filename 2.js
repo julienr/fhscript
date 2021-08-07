@@ -1,6 +1,7 @@
 function my_function x y {
-  while x > 0 {
-    x = x - 1;
+  while y > 0 {
+    y = y - 1;
+    x = y + 2;
     call print '42';
     while x > 2 {
       call print '2';

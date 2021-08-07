@@ -296,13 +296,7 @@ struct ASTNode {
   // vector<ASTNode> children;
   virtual ~ASTNode() {}
 
-  virtual void Visit(Visitor* visitor) const {
-    visitor->enter(*this);
-    // for (const ASTNode& node : children) {
-    // node.Visit(visitor);
-    //}
-    visitor->exit(*this);
-  }
+  virtual void Visit(Visitor* visitor) const = 0;
 
   virtual std::string ToString() const = 0;
 };
@@ -348,6 +342,11 @@ struct FunctionNode : public ASTNode {
 
 struct ExpressionNode : public ASTNode {
   virtual std::string ToString() const override { return "Expression"; }
+
+  virtual void Visit(Visitor* visitor) const override {
+    visitor->enter(*this);
+    visitor->exit(*this);
+  }
 };
 
 struct WhileNode : public ASTNode {
@@ -368,15 +367,51 @@ struct WhileNode : public ASTNode {
 };
 
 struct AssignmentNode : public ASTNode {
-  virtual std::string ToString() const override { return "Assignment"; }
+  AssignmentNode(const Token& left, unique_ptr<ExpressionNode> expression)
+      : left(left), expression(std::move(expression)) {
+    CHECK(left.type == Token::Type::Identifier);
+  }
+  Token left;
+  unique_ptr<ExpressionNode> expression;
+
+  virtual std::string ToString() const override {
+    return "Assignment(" + left.value + ")";
+  }
+
+  virtual void Visit(Visitor* visitor) const override {
+    visitor->enter(*this);
+    expression->Visit(visitor);
+    visitor->exit(*this);
+  }
 };
 
 struct ReturnNode : public ASTNode {
+  explicit ReturnNode(unique_ptr<ExpressionNode> expression)
+      : expression(std::move(expression)) {}
+
+  unique_ptr<ExpressionNode> expression;
   virtual std::string ToString() const override { return "Return"; }
+
+  virtual void Visit(Visitor* visitor) const override {
+    visitor->enter(*this);
+    expression->Visit(visitor);
+    visitor->exit(*this);
+  }
 };
 
 struct FunctionCallNode : public ASTNode {
-  virtual std::string ToString() const override { return "FunctionCall"; }
+  // TODO: Take arguments
+  explicit FunctionCallNode(const Token& name) : function_name(name) {}
+
+  Token function_name;
+  virtual std::string ToString() const override {
+    return "FunctionCall(" + function_name.value + ")";
+  }
+
+  virtual void Visit(Visitor* visitor) const override {
+    visitor->enter(*this);
+    visitor->exit(*this);
+  }
 };
 
 class AST {
@@ -440,33 +475,21 @@ unique_ptr<ASTNode> ConsumeStatement(queue<Token>& tokens) {
       tokens.pop();
     }
     AssertNext(tokens, Token::Type::SepSemicolon);
-    return std::make_unique<FunctionCallNode>();
+    return std::make_unique<FunctionCallNode>(name);
   } else if (first.type == Token::Type::Identifier) {
     // Variable assignment
     AssertNext(tokens, Token::Type::OpEqual);
     auto expression = ConsumeExpression(tokens, Token::Type::SepSemicolon);
     AssertNext(tokens, Token::Type::SepSemicolon);
-    return std::make_unique<AssignmentNode>();
+    return std::make_unique<AssignmentNode>(first, std::move(expression));
   } else if (first.type == Token::Type::KwdReturn) {
     auto expression = ConsumeExpression(tokens, Token::Type::SepSemicolon);
     AssertNext(tokens, Token::Type::SepSemicolon);
-    return std::make_unique<ReturnNode>();
+    return std::make_unique<ReturnNode>(std::move(expression));
   } else {
     throw Panic("Invalid statement starting with " +
                 Token::TypeToString(first.type));
   }
-  /*
-  vector<Token> statement;
-  while (tokens.size() > 0 &&
-         tokens.front().type != Token::Type::SepSemicolon) {
-    statement.push_back(tokens.front());
-    tokens.pop();
-  }
-  AssertNext(tokens, Token::Type::SepSemicolon);
-  */
-  // return ASTNode{// TODO: Placeholder
-  //.token =
-  // Token(Token::Type::SepSemicolon, ";", Location(42, 42))};
 }
 
 unique_ptr<BlockNode> ConsumeBlock(queue<Token>& tokens) {
