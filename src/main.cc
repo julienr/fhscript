@@ -396,16 +396,22 @@ struct ReturnNode : public ASTNode {
 };
 
 struct FunctionCallNode : public ASTNode {
-  // TODO: Take arguments
-  explicit FunctionCallNode(const Token& name) : function_name(name) {}
+  explicit FunctionCallNode(const Token& name,
+                            vector<unique_ptr<ExpressionNode>> arguments)
+      : function_name(name), arguments(std::move(arguments)) {}
 
   Token function_name;
+  vector<unique_ptr<ExpressionNode>> arguments;
   virtual std::string ToString() const override {
-    return "FunctionCall(" + function_name.value + ")";
+    return "FunctionCall(" + function_name.value + ", " +
+           std::to_string(arguments.size()) + ")";
   }
 
   virtual void Visit(Visitor* visitor) const override {
     visitor->enter(*this);
+    for (const auto& arg : arguments) {
+      arg->Visit(visitor);
+    }
     visitor->exit(*this);
   }
 };
@@ -438,11 +444,12 @@ Token AssertNext(queue<Token>& tokens, Token::Type type) {
   return t;
 }
 
+// y - 1
+// (y - 1)
+// y + (x - 1)
+// 2 * (x + (y - 3) * 4)
 unique_ptr<ExpressionNode> ConsumeExpression(
     queue<Token>& tokens, const unordered_set<Token::Type>& endMarkers) {
-  if (tokens.size() == 0) {
-    throw Panic("End of file reached while looking for expression");
-  }
   vector<Token> statement;
   while (tokens.size() > 0 &&
          endMarkers.find(tokens.front().type) == endMarkers.end()) {
@@ -490,7 +497,7 @@ unique_ptr<ASTNode> ConsumeStatement(queue<Token>& tokens) {
       }
       tokens.pop();
       AssertNext(tokens, Token::Type::SepSemicolon);
-      return std::make_unique<FunctionCallNode>(first);
+      return std::make_unique<FunctionCallNode>(first, std::move(arguments));
     } else if (next.type == Token::Type::OpEqual) {
       // Assignment
       auto expression = ConsumeExpression(tokens, {Token::Type::SepSemicolon});
