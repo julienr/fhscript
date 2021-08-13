@@ -20,6 +20,7 @@
 using std::queue;
 using std::string;
 using std::unique_ptr;
+using std::unordered_set;
 using std::vector;
 
 class FileNotFoundException : public std::exception {
@@ -101,7 +102,6 @@ struct Token {
     OtherPunctuator,
     KwdFunction,
     KwdWhile,
-    KwdCall,
     KwdReturn,
     Identifier,
     OpPlus,
@@ -132,8 +132,6 @@ struct Token {
         return "KwdFunction";
       case Type::KwdWhile:
         return "KwdWhile";
-      case Type::KwdCall:
-        return "KwdCall";
       case Type::KwdReturn:
         return "KwdReturn";
       case Type::Identifier:
@@ -171,7 +169,6 @@ struct Token {
         return "OtherPunctuator[" + value + "]";
       case Type::KwdFunction:
       case Type::KwdWhile:
-      case Type::KwdCall:
       case Type::KwdReturn:
         return "Keyword[" + value + "]";
       case Type::Identifier:
@@ -198,7 +195,6 @@ struct Token {
 const std::unordered_map<string, Token::Type> kKeywords = {
     {"function", Token::Type::KwdFunction},
     {"while", Token::Type::KwdWhile},
-    {"call", Token::Type::KwdCall},
     {"return", Token::Type::KwdReturn}};
 
 const std::unordered_map<int, Token::Type> kSimpleTokens = {
@@ -442,10 +438,14 @@ Token AssertNext(queue<Token>& tokens, Token::Type type) {
   return t;
 }
 
-unique_ptr<ExpressionNode> ConsumeExpression(queue<Token>& tokens,
-                                             Token::Type endMarker) {
+unique_ptr<ExpressionNode> ConsumeExpression(
+    queue<Token>& tokens, const unordered_set<Token::Type>& endMarkers) {
+  if (tokens.size() == 0) {
+    throw Panic("End of file reached while looking for expression");
+  }
   vector<Token> statement;
-  while (tokens.size() > 0 && tokens.front().type != endMarker) {
+  while (tokens.size() > 0 &&
+         endMarkers.find(tokens.front().type) == endMarkers.end()) {
     statement.push_back(tokens.front());
     tokens.pop();
   }
@@ -463,27 +463,46 @@ unique_ptr<ASTNode> ConsumeStatement(queue<Token>& tokens) {
 
   if (first.type == Token::Type::KwdWhile) {
     // While loop
-    auto expression = ConsumeExpression(tokens, Token::Type::SepLeftBrace);
+    auto expression = ConsumeExpression(tokens, {Token::Type::SepLeftBrace});
     auto body = ConsumeBlock(tokens);
     return std::make_unique<WhileNode>(std::move(expression), std::move(body));
-  } else if (first.type == Token::Type::KwdCall) {
-    // Function call
-    const Token name = AssertNext(tokens, Token::Type::Identifier);
-    // TODO: Consume arguments
-    while (tokens.size() > 0 &&
-           tokens.front().type != Token::Type::SepSemicolon) {
-      tokens.pop();
-    }
-    AssertNext(tokens, Token::Type::SepSemicolon);
-    return std::make_unique<FunctionCallNode>(name);
   } else if (first.type == Token::Type::Identifier) {
+    // Either an assignment or a direct function call, e.g. one of:
+    // a = 2 + 1;
+    // myFunc(42, 43);
+    // a = myFunc(42) + 3;
+    const Token next = tokens.front();
+    tokens.pop();
+    if (next.type == Token::Type::SepLeftPar) {
+      // Function call
+      vector<unique_ptr<ExpressionNode>> arguments;
+      while (tokens.size() > 0 &&
+             tokens.front().type != Token::Type::SepRightPar) {
+        auto expression = ConsumeExpression(
+            tokens, {Token::Type::SepComma, Token::Type::SepRightPar});
+        arguments.push_back(std::move(expression));
+        if (tokens.front().type == Token::Type::SepComma) {
+          tokens.pop();
+        }
+      }
+      if (tokens.size() == 0) {
+        throw Panic("Expected )");
+      }
+      tokens.pop();
+      AssertNext(tokens, Token::Type::SepSemicolon);
+      return std::make_unique<FunctionCallNode>(first);
+    } else if (next.type == Token::Type::OpEqual) {
+      // Assignment
+      auto expression = ConsumeExpression(tokens, {Token::Type::SepSemicolon});
+      AssertNext(tokens, Token::Type::SepSemicolon);
+      return std::make_unique<AssignmentNode>(first, std::move(expression));
+    } else {
+      throw Panic("Invalid statement, expected ( or =, got " +
+                  Token::TypeToString(next.type));
+    }
     // Variable assignment
-    AssertNext(tokens, Token::Type::OpEqual);
-    auto expression = ConsumeExpression(tokens, Token::Type::SepSemicolon);
-    AssertNext(tokens, Token::Type::SepSemicolon);
-    return std::make_unique<AssignmentNode>(first, std::move(expression));
   } else if (first.type == Token::Type::KwdReturn) {
-    auto expression = ConsumeExpression(tokens, Token::Type::SepSemicolon);
+    auto expression = ConsumeExpression(tokens, {Token::Type::SepSemicolon});
     AssertNext(tokens, Token::Type::SepSemicolon);
     return std::make_unique<ReturnNode>(std::move(expression));
   } else {
