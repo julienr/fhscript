@@ -2,12 +2,12 @@
 #include <exception>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <queue>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <memory>
 
 #define STR(x) #x
 #define CHECK(x)                                                              \
@@ -123,6 +123,17 @@ struct Token {
   string value;
   Location location;
 
+  bool IsBooleanOperator() const {
+    switch (type) {
+      case Type::OpPlus:
+      case Type::OpMinus:
+      case Type::OpGreaterThan:
+        return true;
+      default:
+        return false;
+    }
+  }
+
   static const string TypeToString(Token::Type type) {
     switch (type) {
       case Type::DecimalLiteral:
@@ -160,7 +171,8 @@ struct Token {
       case Type::SepQuote:
         return "SepQuote";
       default:
-        throw Panic(std::string("Unhandled type: ") + Token::TypeToString(type));
+        throw Panic(std::string("Unhandled type: ") +
+                    Token::TypeToString(type));
     }
   }
 
@@ -340,11 +352,50 @@ struct FunctionNode : public ASTNode {
 };
 
 struct ExpressionNode : public ASTNode {
-  virtual std::string ToString() const override { return "Expression"; }
+  ExpressionNode(const std::string& type = "generic") : type(type) {}
+  std::string type;
+  virtual std::string ToString() const override {
+    return std::string("Expression :") + type;
+  }
 
   virtual void Visit(Visitor* visitor) const override {
     visitor->enter(*this);
     visitor->exit(*this);
+  }
+};
+
+struct BooleanOperatorNode : public ExpressionNode {
+  BooleanOperatorNode(unique_ptr<ExpressionNode> left, const Token& op,
+                      unique_ptr<ExpressionNode> right)
+      : left(std::move(left)), op(op), right(std::move(right)) {}
+
+  unique_ptr<ExpressionNode> left;
+  Token op;
+  unique_ptr<ExpressionNode> right;
+
+  virtual std::string ToString() const override {
+    return std::string("BooleanOperatorNode[op=") +
+           Token::TypeToString(op.type) + std::string("]");
+  }
+
+  virtual void Visit(Visitor* visitor) const override {
+    visitor->enter(*this);
+    left->Visit(visitor);
+    right->Visit(visitor);
+    visitor->exit(*this);
+  }
+};
+
+struct VariableNode : public ASTNode {
+  // TODO
+};
+
+struct LiteralNode : public ExpressionNode {
+  LiteralNode(const Token& literal) : literal(literal) {}
+  Token literal;
+
+  virtual std::string ToString() const override {
+    return std::string("LiteralNode[") + literal.ToString() + std::string("]");
   }
 };
 
@@ -433,33 +484,62 @@ class AST {
   vector<unique_ptr<ASTNode>> functions;
 };
 
-Token AssertNext(queue<Token>& tokens, Token::Type type) {
+Token AssertNext(queue<Token>& tokens,
+                 const std::unordered_set<Token::Type>& types) {
+  std::string expected = "[";
+  for (const Token::Type& candidate : types) {
+    expected += Token::TypeToString(candidate) + std::string(", ");
+  }
+  expected += "]";
+
   if (tokens.size() == 0) {
-    throw Panic("End of file while looking for " + Token::TypeToString(type));
+    throw Panic("End of file while looking for " + expected);
   }
   Token t = tokens.front();
-  if (t.type != type) {
-    throw Panic("Incorrect type, expected " + Token::TypeToString(type) +
-                ", got " + Token::TypeToString(t.type) + ", at " +
-                t.location.ToString());
+  if (types.find(t.type) == types.end()) {
+    throw Panic("Incorrect type, expected one of " + expected + ", got " +
+                Token::TypeToString(t.type) + ", at " + t.location.ToString());
   }
   tokens.pop();
   return t;
 }
 
+Token AssertNext(queue<Token>& tokens, const Token::Type& type) {
+  std::unordered_set types{type};
+  return AssertNext(tokens, types);
+}
+
+// Currently only unary or binary expression (i.e. need explicit parentheses)
 // y - 1
 // (y - 1)
 // y + (x - 1)
 // 2 * (x + (y - 3) * 4)
-unique_ptr<ExpressionNode> ConsumeExpression(
-    queue<Token>& tokens, const unordered_set<Token::Type>& endMarkers) {
-  vector<Token> statement;
-  while (tokens.size() > 0 &&
-         endMarkers.find(tokens.front().type) == endMarkers.end()) {
-    statement.push_back(tokens.front());
-    tokens.pop();
+unique_ptr<ExpressionNode> ConsumeExpression(queue<Token>& tokens) {
+  if (tokens.size() == 0) {
+    throw Panic("End of file reached while parsing expression");
   }
-  return std::make_unique<ExpressionNode>();
+
+  unique_ptr<ExpressionNode> left;
+  if (tokens.front().type == Token::Type::SepLeftPar) {
+    tokens.pop();
+    left = ConsumeExpression(tokens);
+    AssertNext(tokens, Token::Type::SepRightPar);
+  } else {
+    const Token literal = AssertNext(
+        tokens, {Token::Type::DecimalLiteral, Token::Type::Identifier});
+    left = std::make_unique<LiteralNode>(literal);
+  }
+
+  if (tokens.front().IsBooleanOperator()) {
+    const Token op = tokens.front();
+    tokens.pop();
+    unique_ptr<ExpressionNode> right = ConsumeExpression(tokens);
+    auto expr = std::make_unique<BooleanOperatorNode>(std::move(left), op,
+                                                      std::move(right));
+    return expr;
+  } else {
+    return left;
+  }
 }
 
 unique_ptr<BlockNode> ConsumeBlock(queue<Token>& tokens);
@@ -473,7 +553,7 @@ unique_ptr<ASTNode> ConsumeStatement(queue<Token>& tokens) {
 
   if (first.type == Token::Type::KwdWhile) {
     // While loop
-    auto expression = ConsumeExpression(tokens, {Token::Type::SepLeftBrace});
+    auto expression = ConsumeExpression(tokens);
     auto body = ConsumeBlock(tokens);
     return std::make_unique<WhileNode>(std::move(expression), std::move(body));
   } else if (first.type == Token::Type::Identifier) {
@@ -488,31 +568,28 @@ unique_ptr<ASTNode> ConsumeStatement(queue<Token>& tokens) {
       vector<unique_ptr<ExpressionNode>> arguments;
       while (tokens.size() > 0 &&
              tokens.front().type != Token::Type::SepRightPar) {
-        auto expression = ConsumeExpression(
-            tokens, {Token::Type::SepComma, Token::Type::SepRightPar});
+        auto expression = ConsumeExpression(tokens);
+        // AssertNext(tokens, {Token::Type::SepComma,
+        // Token::Type::SepRightPar});
         arguments.push_back(std::move(expression));
         if (tokens.front().type == Token::Type::SepComma) {
           tokens.pop();
         }
       }
-      if (tokens.size() == 0) {
-        throw Panic("Expected )");
-      }
-      tokens.pop();
+      AssertNext(tokens, Token::Type::SepRightPar);
       AssertNext(tokens, Token::Type::SepSemicolon);
       return std::make_unique<FunctionCallNode>(first, std::move(arguments));
     } else if (next.type == Token::Type::OpEqual) {
-      // Assignment
-      auto expression = ConsumeExpression(tokens, {Token::Type::SepSemicolon});
+      // Variable assignment
+      auto expression = ConsumeExpression(tokens);
       AssertNext(tokens, Token::Type::SepSemicolon);
       return std::make_unique<AssignmentNode>(first, std::move(expression));
     } else {
       throw Panic("Invalid statement, expected ( or =, got " +
                   Token::TypeToString(next.type));
     }
-    // Variable assignment
   } else if (first.type == Token::Type::KwdReturn) {
-    auto expression = ConsumeExpression(tokens, {Token::Type::SepSemicolon});
+    auto expression = ConsumeExpression(tokens);
     AssertNext(tokens, Token::Type::SepSemicolon);
     return std::make_unique<ReturnNode>(std::move(expression));
   } else {
