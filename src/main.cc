@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <memory>
 
 #define STR(x) #x
 #define CHECK(x)                                                              \
@@ -158,6 +159,8 @@ struct Token {
         return "SepComma";
       case Type::SepQuote:
         return "SepQuote";
+      default:
+        throw Panic(std::string("Unhandled type: ") + Token::TypeToString(type));
     }
   }
 
@@ -236,7 +239,7 @@ Token ReadLiteral(SourceFile* file) {
   while (true) {
     char c = file->Peek();
     if (file->IsEnd() || !(std::isalpha(static_cast<int>(c)) |
-                           std::isdigit(static_cast<int>(c)) | c == '_')) {
+                           std::isdigit(static_cast<int>(c)) | (c == '_'))) {
       break;
     }
     auto [rc, location] = file->Next();
