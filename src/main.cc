@@ -407,8 +407,14 @@ struct BooleanOperatorNode : public ExpressionNode {
   }
 };
 
-struct VariableNode : public ASTNode {
-  // TODO
+struct VariableNode : public ExpressionNode {
+  VariableNode(const Token& ident) : identifier(ident) {}
+  Token identifier;
+
+  virtual std::string ToString() const override {
+    return std::string("VariableNode[") + identifier.ToString() +
+           std::string("]");
+  }
 };
 
 struct LiteralNode : public ExpressionNode {
@@ -560,8 +566,7 @@ unique_ptr<ExpressionNode> ConsumeExpression(queue<Token>& tokens) {
       // Function call
       left = ConsumeFunctionCall(ident, tokens);
     } else {
-      // TODO: VariableNode
-      left = std::make_unique<LiteralNode>(ident);
+      left = std::make_unique<VariableNode>(ident);
     }
   } else {
     const Token literal = AssertNext(tokens, Token::Type::DecimalLiteral);
