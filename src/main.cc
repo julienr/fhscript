@@ -364,6 +364,27 @@ struct ExpressionNode : public ASTNode {
   }
 };
 
+struct FunctionCallNode : public ExpressionNode {
+  explicit FunctionCallNode(const Token& name,
+                            vector<unique_ptr<ExpressionNode>> arguments)
+      : function_name(name), arguments(std::move(arguments)) {}
+
+  Token function_name;
+  vector<unique_ptr<ExpressionNode>> arguments;
+  virtual std::string ToString() const override {
+    return "FunctionCall(" + function_name.value + ", " +
+           std::to_string(arguments.size()) + ")";
+  }
+
+  virtual void Visit(Visitor* visitor) const override {
+    visitor->enter(*this);
+    for (const auto& arg : arguments) {
+      arg->Visit(visitor);
+    }
+    visitor->exit(*this);
+  }
+};
+
 struct BooleanOperatorNode : public ExpressionNode {
   BooleanOperatorNode(unique_ptr<ExpressionNode> left, const Token& op,
                       unique_ptr<ExpressionNode> right)
@@ -449,27 +470,6 @@ struct ReturnNode : public ASTNode {
   }
 };
 
-struct FunctionCallNode : public ASTNode {
-  explicit FunctionCallNode(const Token& name,
-                            vector<unique_ptr<ExpressionNode>> arguments)
-      : function_name(name), arguments(std::move(arguments)) {}
-
-  Token function_name;
-  vector<unique_ptr<ExpressionNode>> arguments;
-  virtual std::string ToString() const override {
-    return "FunctionCall(" + function_name.value + ", " +
-           std::to_string(arguments.size()) + ")";
-  }
-
-  virtual void Visit(Visitor* visitor) const override {
-    visitor->enter(*this);
-    for (const auto& arg : arguments) {
-      arg->Visit(visitor);
-    }
-    visitor->exit(*this);
-  }
-};
-
 class AST {
  public:
   AST(const vector<Token>& tokens);
@@ -509,11 +509,35 @@ Token AssertNext(queue<Token>& tokens, const Token::Type& type) {
   return AssertNext(tokens, types);
 }
 
+unique_ptr<ExpressionNode> ConsumeExpression(queue<Token>& tokens);
+
+// Parses a function call, but it's the caller responsibility to have
+// extracted the function name
+unique_ptr<FunctionCallNode> ConsumeFunctionCall(const Token& func_name,
+                                                 queue<Token>& tokens) {
+  CHECK(func_name.type == Token::Type::Identifier);
+  AssertNext(tokens, Token::Type::SepLeftPar);
+
+  vector<unique_ptr<ExpressionNode>> arguments;
+  while (tokens.size() > 0 && tokens.front().type != Token::Type::SepRightPar) {
+    auto expression = ConsumeExpression(tokens);
+    // AssertNext(tokens, {Token::Type::SepComma,
+    // Token::Type::SepRightPar});
+    arguments.push_back(std::move(expression));
+    if (tokens.front().type == Token::Type::SepComma) {
+      tokens.pop();
+    }
+  }
+  AssertNext(tokens, Token::Type::SepRightPar);
+  return std::make_unique<FunctionCallNode>(func_name, std::move(arguments));
+}
+
 // Currently only unary or binary expression (i.e. need explicit parentheses)
 // y - 1
 // (y - 1)
 // y + (x - 1)
 // 2 * (x + (y - 3) * 4)
+// 2 + my_function(42, (4 + 3))
 unique_ptr<ExpressionNode> ConsumeExpression(queue<Token>& tokens) {
   if (tokens.size() == 0) {
     throw Panic("End of file reached while parsing expression");
@@ -521,12 +545,26 @@ unique_ptr<ExpressionNode> ConsumeExpression(queue<Token>& tokens) {
 
   unique_ptr<ExpressionNode> left;
   if (tokens.front().type == Token::Type::SepLeftPar) {
+    // Parenthesis expression
+    //   (2 + 3)
     tokens.pop();
     left = ConsumeExpression(tokens);
     AssertNext(tokens, Token::Type::SepRightPar);
+  } else if (tokens.front().type == Token::Type::Identifier) {
+    const Token ident = tokens.front();
+    tokens.pop();
+    // either a variable or function call
+    //   x
+    //   my_function(42)
+    if (tokens.front().type == Token::Type::SepLeftPar) {
+      // Function call
+      left = ConsumeFunctionCall(ident, tokens);
+    } else {
+      // TODO: VariableNode
+      left = std::make_unique<LiteralNode>(ident);
+    }
   } else {
-    const Token literal = AssertNext(
-        tokens, {Token::Type::DecimalLiteral, Token::Type::Identifier});
+    const Token literal = AssertNext(tokens, Token::Type::DecimalLiteral);
     left = std::make_unique<LiteralNode>(literal);
   }
 
@@ -561,32 +599,19 @@ unique_ptr<ASTNode> ConsumeStatement(queue<Token>& tokens) {
     // a = 2 + 1;
     // myFunc(42, 43);
     // a = myFunc(42) + 3;
-    const Token next = tokens.front();
-    tokens.pop();
-    if (next.type == Token::Type::SepLeftPar) {
-      // Function call
-      vector<unique_ptr<ExpressionNode>> arguments;
-      while (tokens.size() > 0 &&
-             tokens.front().type != Token::Type::SepRightPar) {
-        auto expression = ConsumeExpression(tokens);
-        // AssertNext(tokens, {Token::Type::SepComma,
-        // Token::Type::SepRightPar});
-        arguments.push_back(std::move(expression));
-        if (tokens.front().type == Token::Type::SepComma) {
-          tokens.pop();
-        }
-      }
-      AssertNext(tokens, Token::Type::SepRightPar);
+    if (tokens.front().type == Token::Type::SepLeftPar) {
+      auto func_call = ConsumeFunctionCall(first, tokens);
       AssertNext(tokens, Token::Type::SepSemicolon);
-      return std::make_unique<FunctionCallNode>(first, std::move(arguments));
-    } else if (next.type == Token::Type::OpEqual) {
+      return func_call;
+    } else if (tokens.front().type == Token::Type::OpEqual) {
+      tokens.pop();
       // Variable assignment
       auto expression = ConsumeExpression(tokens);
       AssertNext(tokens, Token::Type::SepSemicolon);
       return std::make_unique<AssignmentNode>(first, std::move(expression));
     } else {
       throw Panic("Invalid statement, expected ( or =, got " +
-                  Token::TypeToString(next.type));
+                  Token::TypeToString(tokens.front().type));
     }
   } else if (first.type == Token::Type::KwdReturn) {
     auto expression = ConsumeExpression(tokens);

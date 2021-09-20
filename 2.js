@@ -12,5 +12,6 @@ function my_function x y {
 
 function main {
   x = 2 + 3;
+  x = my_function(x, 2);
   return 0;
 }
