@@ -103,15 +103,27 @@ TEST(ASTTest, Program1) {
   }
 }
 
-TEST(EvaluatePlus, Program1) {
-  SourceString s("2 + 3");
+template <class ConsumeFn>
+typename std::result_of<ConsumeFn(std::queue<Token>&)>::type Parse(
+    const char* source, ConsumeFn fn) {
+  SourceString s(source);
   auto tokens = lex(&s);
   queue<Token> to_consume;
   for (const Token& t : tokens) {
     to_consume.push(t);
   }
-  auto expr = ConsumeExpression(to_consume);
+  return fn(to_consume);
+}
 
+int ParseAndEval(const char* source) {
+  auto expr = Parse(source, ConsumeExpression);
   Scope scope;
-  EXPECT_EQ(expr->Evaluate(&scope), 5);
+  return expr->Evaluate(&scope);
+}
+
+TEST(EvaluateBooleanExpression, Program1) {
+  EXPECT_EQ(ParseAndEval("2+3"), 5);
+  EXPECT_EQ(ParseAndEval("7-12"), -5);
+  EXPECT_EQ(ParseAndEval("4 > 1"), 1);
+  EXPECT_EQ(ParseAndEval("2 > 3"), 0);
 }
