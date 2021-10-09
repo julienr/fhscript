@@ -523,7 +523,9 @@ struct LiteralNode : public ExpressionNode {
     return std::string("LiteralNode[") + literal.ToString() + std::string("]");
   }
 
-  virtual Value Evaluate(Scope* scope) const { return std::stoi(literal.value); }
+  virtual Value Evaluate(Scope* scope) const {
+    return std::stoi(literal.value);
+  }
 };
 
 struct WhileNode : public ASTNode {
