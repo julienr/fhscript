@@ -343,7 +343,18 @@ using Value = int;
 struct FunctionNode;
 
 struct Scope {
-  std::unordered_map<std::string, const FunctionNode*> functions;
+  const FunctionNode* GetFunction(const std::string& name) const {
+    const auto it = functions_.find(name);
+    if (it == functions_.end()) {
+      throw Panic(std::string("Function " + name + " is not defined"));
+    } else {
+      return it->second;
+    }
+  }
+
+  void SetFunction(const std::string& name, const FunctionNode* function) {
+    functions_[name] = function;
+  }
 
   Value GetVariable(const std::string& name) const {
     const auto it = variables_.find(name);
@@ -360,6 +371,7 @@ struct Scope {
 
  private:
   std::unordered_map<std::string, Value> variables_;
+  std::unordered_map<std::string, const FunctionNode*> functions_;
 };
 
 struct ASTNode;
@@ -400,11 +412,12 @@ struct BlockNode : public ASTNode {
   }
 
   virtual Value Evaluate(Scope* scope) const override {
+    Value retval;
     Scope block_scope(*scope);
     for (const auto& node : statements) {
-      node->Evaluate(&block_scope);
+      retval = node->Evaluate(&block_scope);
     }
-    return Value();
+    return retval;
   }
 };
 
@@ -431,9 +444,7 @@ struct FunctionNode : public ASTNode {
   virtual Value Evaluate(Scope* scope) const {
     // We assume this is called from FunctionCallNode which binds the
     // arguments into the scope
-    body->Evaluate(scope);
-    // TODO: Extract return
-    return Value();
+    return body->Evaluate(scope);
   }
 };
 
@@ -465,7 +476,7 @@ struct FunctionCallNode : public ExpressionNode {
   }
 
   virtual Value Evaluate(Scope* scope) const {
-    const FunctionNode* function = scope->functions[function_name.value];
+    const FunctionNode* function = scope->GetFunction(function_name.value);
     Scope func_scope(*scope);
     // Declaration and bound args should match
     CHECK(arguments.size() == function->arguments.size());

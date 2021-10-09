@@ -146,3 +146,26 @@ TEST(Evaluate, IncrementVariable) {
     EXPECT_EQ(scope.GetVariable("a"), i + 1);
   }
 }
+
+TEST(Evaluate, FunctionCall) {
+  auto my_function = Parse(
+      R""""(
+        function my_function x {
+          return x + 2;
+        }
+      )"""",
+      ConsumeFunction);
+  auto main = Parse(
+      R""""(
+        function main {
+          x = my_function(3);
+          x = x - 1;
+          return x;
+        }
+      )"""",
+      ConsumeFunction);
+  Scope scope;
+  scope.SetFunction("my_function", my_function.get());
+  const Value retval = main->Evaluate(&scope);
+  EXPECT_EQ(retval, 4);
+}
