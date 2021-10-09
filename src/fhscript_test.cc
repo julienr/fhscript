@@ -8,7 +8,7 @@ const T* expectAndCast(const ASTNode* node) {
   return static_cast<const T*>(node);
 }
 
-TEST(ASTTest, Program1) {
+TEST(ASTTest, Example2) {
   SourceFile file("examples/2.fhs");
   const auto tokens = lex(&file);
 
@@ -185,4 +185,24 @@ TEST(Evaluate, While) {
   while_node->Evaluate(&scope);
   EXPECT_EQ(scope.GetVariable("x"), 10);
   EXPECT_EQ(scope.GetVariable("y"), 0);
+}
+
+TEST(Evaluate, Program1) {
+  SourceString s(
+      R""""(
+        function add_3 t x {
+          i = 0;
+          while x > i {
+            i = i + 1;
+            t = t + 3;
+          }
+          return t;
+        }
+        function main {
+          return add_3(2, 5);
+        }
+      )"""");
+  const auto tokens = lex(&s);
+  AST ast(tokens);
+  EXPECT_EQ(ast.Evaluate(), 17);
 }

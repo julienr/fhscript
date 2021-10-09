@@ -659,6 +659,15 @@ class AST {
     throw Panic(std::string("Function not found: ") + name);
   }
 
+  Value Evaluate() const {
+    Scope scope;
+    for (const auto& func : functions_) {
+      scope.SetFunction(func->name.value, func.get());
+    }
+    const auto main = scope.GetFunction("main");
+    return main->Evaluate(&scope);
+  }
+
  private:
   vector<unique_ptr<FunctionNode>> functions_;
 };
