@@ -343,8 +343,23 @@ using Value = int;
 struct FunctionNode;
 
 struct Scope {
-  std::unordered_map<std::string, Value> variables;
   std::unordered_map<std::string, const FunctionNode*> functions;
+
+  Value GetVariable(const std::string& name) const {
+    const auto it = variables_.find(name);
+    if (it == variables_.end()) {
+      throw Panic(std::string("Variable " + name + " is not defined"));
+    } else {
+      return it->second;
+    }
+  }
+
+  void SetVariable(const std::string& name, const Value& val) {
+    variables_[name] = val;
+  }
+
+ private:
+  std::unordered_map<std::string, Value> variables_;
 };
 
 struct ASTNode;
@@ -455,8 +470,8 @@ struct FunctionCallNode : public ExpressionNode {
     // Declaration and bound args should match
     CHECK(arguments.size() == function->arguments.size());
     for (int i = 0; i < arguments.size(); ++i) {
-      func_scope.variables[function->arguments[i].value] =
-          arguments[i]->Evaluate(scope);
+      func_scope.SetVariable(function->arguments[i].value,
+                             arguments[i]->Evaluate(scope));
     }
     return function->Evaluate(&func_scope);
   }
@@ -511,7 +526,7 @@ struct VariableNode : public ExpressionNode {
   }
 
   virtual Value Evaluate(Scope* scope) const {
-    return scope->variables[identifier.value];
+    return scope->GetVariable(identifier.value);
   }
 };
 
@@ -576,7 +591,7 @@ struct AssignmentNode : public ASTNode {
 
   virtual Value Evaluate(Scope* scope) const {
     const Value val = expression->Evaluate(scope);
-    scope->variables[left.value] = val;
+    scope->SetVariable(left.value, val);
     return val;
   }
 };

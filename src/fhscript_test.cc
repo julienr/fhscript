@@ -121,9 +121,28 @@ int ParseAndEval(const char* source) {
   return expr->Evaluate(&scope);
 }
 
-TEST(EvaluateBooleanExpression, Program1) {
+TEST(Evaluate, Expression) {
   EXPECT_EQ(ParseAndEval("2+3"), 5);
   EXPECT_EQ(ParseAndEval("7-12"), -5);
   EXPECT_EQ(ParseAndEval("4 > 1"), 1);
   EXPECT_EQ(ParseAndEval("2 > 3"), 0);
+
+  EXPECT_EQ(ParseAndEval("2 + (9 - 1)"), 10);
+  EXPECT_EQ(ParseAndEval("(3 + 4) - (1 + 2)"), 4);
+}
+
+TEST(Evaluate, SimpleAssignment) {
+  auto expr = Parse("a = 3;", ConsumeStatement);
+  Scope scope;
+  expr->Evaluate(&scope);
+  EXPECT_EQ(scope.GetVariable("a"), 3);
+}
+
+TEST(Evaluate, IncrementVariable) {
+  Scope scope;
+  Parse("a = 0;", ConsumeStatement)->Evaluate(&scope);
+  for (int i = 0; i < 5; ++i) {
+    Parse("a = a + 1;", ConsumeStatement)->Evaluate(&scope);
+    EXPECT_EQ(scope.GetVariable("a"), i + 1);
+  }
 }
