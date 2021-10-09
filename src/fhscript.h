@@ -54,36 +54,24 @@ struct Location {
   }
 };
 
-class SourceFile {
+class Source {
  public:
-  SourceFile(const string& filename) {
-    file_.open(filename.c_str(), std::ios::in | std::ios::binary);
-    if (!file_.is_open()) {
-      throw FileNotFoundException();
-    }
-  }
-
-  bool IsEnd() { return file_.eof(); }
-
-  char Peek() {
-    if (IsEnd()) {
-      throw EOFException();
-    }
-    return static_cast<char>(file_.peek());
-  }
-
+  virtual bool IsEnd() = 0;
+  virtual char Peek() = 0;
   std::tuple<char, Location> Next() {
-    const char c = _get();
+    const char c = GetNextChar();
     return std::make_tuple(c, Location(line_, col_));
   }
+
+ protected:
+  virtual char GetNextChar() = 0;
 
  private:
   char _get() {
     if (IsEnd()) {
       throw EOFException();
     }
-    char c;
-    file_.get(c);
+    char c = GetNextChar();
     if (c == '\n') {
       line_++;
       col_ = 0;
@@ -92,9 +80,66 @@ class SourceFile {
     }
     return c;
   }
-  std::ifstream file_;
+
   int line_ = 1;
   int col_ = 1;
+};
+
+class SourceFile : public Source {
+ public:
+  SourceFile(const string& filename) {
+    file_.open(filename.c_str(), std::ios::in | std::ios::binary);
+    if (!file_.is_open()) {
+      throw FileNotFoundException();
+    }
+  }
+
+  virtual bool IsEnd() override { return file_.eof(); }
+
+  virtual char Peek() override {
+    if (IsEnd()) {
+      throw EOFException();
+    }
+    return static_cast<char>(file_.peek());
+  }
+
+ protected:
+  virtual char GetNextChar() override {
+    char c;
+    file_.get(c);
+    return c;
+  }
+
+ private:
+  std::ifstream file_;
+};
+
+// Program source from a string
+class SourceString : public Source {
+ public:
+  SourceString(const string& source) : source_(source) {}
+
+  virtual bool IsEnd() override { return current_ == source_.size(); }
+
+  virtual char Peek() override {
+    if (IsEnd()) {
+      // Don't throw here to behave like a file where the eof where you can
+      // peek once before eofbit is set
+      return std::char_traits<char>::eof();
+    }
+    return source_[current_];
+  }
+
+ protected:
+  virtual char GetNextChar() override {
+    const char c = source_[current_];
+    current_++;
+    return c;
+  }
+
+ private:
+  std::string source_;
+  int current_ = 0;
 };
 
 struct Token {
@@ -226,7 +271,7 @@ const std::unordered_map<int, Token::Type> kSimpleTokens = {
     {static_cast<int>('\''), Token::Type::SepQuote},
 };
 
-Token ReadDigit(SourceFile* file) {
+Token ReadDigit(Source* file) {
   string digit = "";
   std::optional<Location> start_loc;
   while (true) {
@@ -245,7 +290,7 @@ Token ReadDigit(SourceFile* file) {
 }
 
 // Reads either an Identifier or a Keyword
-Token ReadLiteral(SourceFile* file) {
+Token ReadLiteral(Source* file) {
   string lit = "";
   std::optional<Location> start_loc;
   while (true) {
@@ -267,7 +312,7 @@ Token ReadLiteral(SourceFile* file) {
   }
 }
 
-vector<Token> lex(SourceFile* file) {
+vector<Token> lex(Source* file) {
   vector<Token> tokens;
   while (true) {
     const char c = file->Peek();
