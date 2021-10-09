@@ -369,6 +369,21 @@ struct Scope {
     variables_[name] = val;
   }
 
+  void Print() const {
+    std::cout << "Scope {" << std::endl;
+    std::cout << "  variables {" << std::endl;
+    for (const auto& kv : variables_) {
+      std::cout << "    " << kv.first << "=" << kv.second << std::endl;
+    }
+    std::cout << "  }" << std::endl;
+    std::cout << "  functions {" << std::endl;
+    for (const auto& kv : functions_) {
+      std::cout << "    " << kv.first << std::endl;
+    }
+    std::cout << "  }" << std::endl;
+    std::cout << "}" << std::endl;
+  }
+
  private:
   std::unordered_map<std::string, Value> variables_;
   std::unordered_map<std::string, const FunctionNode*> functions_;
@@ -413,9 +428,8 @@ struct BlockNode : public ASTNode {
 
   virtual Value Evaluate(Scope* scope) const override {
     Value retval;
-    Scope block_scope(*scope);
     for (const auto& node : statements) {
-      retval = node->Evaluate(&block_scope);
+      retval = node->Evaluate(scope);
     }
     return retval;
   }
@@ -442,9 +456,10 @@ struct FunctionNode : public ASTNode {
   }
 
   virtual Value Evaluate(Scope* scope) const {
+    Scope func_scope(*scope);
     // We assume this is called from FunctionCallNode which binds the
     // arguments into the scope
-    return body->Evaluate(scope);
+    return body->Evaluate(&func_scope);
   }
 };
 
@@ -573,7 +588,7 @@ struct WhileNode : public ASTNode {
   virtual Value Evaluate(Scope* scope) const {
     for (;;) {
       const Value condition = expression->Evaluate(scope);
-      if (!condition) {
+      if (condition == 0) {
         break;
       }
       body->Evaluate(scope);

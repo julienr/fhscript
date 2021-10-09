@@ -169,3 +169,20 @@ TEST(Evaluate, FunctionCall) {
   const Value retval = main->Evaluate(&scope);
   EXPECT_EQ(retval, 4);
 }
+
+TEST(Evaluate, While) {
+  auto while_node = Parse(
+      R""""(
+        while y > 0 {
+          x = x + 1;
+          y = y - 2;
+        }
+      )"""",
+      ConsumeStatement);
+  Scope scope;
+  scope.SetVariable("x", 0);
+  scope.SetVariable("y", 20);
+  while_node->Evaluate(&scope);
+  EXPECT_EQ(scope.GetVariable("x"), 10);
+  EXPECT_EQ(scope.GetVariable("y"), 0);
+}
