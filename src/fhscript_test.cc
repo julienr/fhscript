@@ -94,11 +94,24 @@ TEST(ASTTest, Program1) {
     auto main_function = ast.GetFunction("main");
     auto body = main_function->body.get();
     EXPECT_EQ(body->statements.size(), 3);
-    // x = m<_function(x, 2)
+    // x = my_function(x, 2)
     auto x_assign = expectAndCast<AssignmentNode>(body->statements[1].get());
     EXPECT_EQ(x_assign->left.value, "x");
     EXPECT_EQ(expectAndCast<FunctionCallNode>(x_assign->expression.get())
                   ->function_name.value,
               "my_function");
   }
+}
+
+TEST(EvaluatePlus, Program1) {
+  SourceString s("2 + 3");
+  auto tokens = lex(&s);
+  queue<Token> to_consume;
+  for (const Token& t : tokens) {
+    to_consume.push(t);
+  }
+  auto expr = ConsumeExpression(to_consume);
+
+  Scope scope;
+  EXPECT_EQ(expr->Evaluate(&scope), 5);
 }

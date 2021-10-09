@@ -338,6 +338,15 @@ vector<Token> lex(Source* file) {
   return tokens;
 }
 
+using Value = int;
+
+struct FunctionNode;
+
+struct Scope {
+  std::unordered_map<std::string, Value> variables;
+  std::unordered_map<std::string, const FunctionNode*> functions;
+};
+
 struct ASTNode;
 
 class Visitor {
@@ -355,6 +364,8 @@ struct ASTNode {
   virtual void Visit(Visitor* visitor) const = 0;
 
   virtual std::string ToString() const = 0;
+
+  virtual Value Evaluate(Scope* scope) const = 0;
 };
 
 struct BlockNode : public ASTNode {
@@ -372,6 +383,14 @@ struct BlockNode : public ASTNode {
     }
     visitor->exit(*this);
   }
+
+  virtual Value Evaluate(Scope* scope) const override {
+    Scope block_scope(*scope);
+    for (const auto& node : statements) {
+      node->Evaluate(&block_scope);
+    }
+    return Value();
+  }
 };
 
 struct FunctionNode : public ASTNode {
@@ -384,7 +403,6 @@ struct FunctionNode : public ASTNode {
   vector<Token> arguments;
   unique_ptr<BlockNode> body;
 
-  // TODO: Store arguments and body
   virtual std::string ToString() const override {
     return std::string("Function(") + name.value + ")";
   }
@@ -393,6 +411,14 @@ struct FunctionNode : public ASTNode {
     visitor->enter(*this);
     body->Visit(visitor);
     visitor->exit(*this);
+  }
+
+  virtual Value Evaluate(Scope* scope) const {
+    // We assume this is called from FunctionCallNode which binds the
+    // arguments into the scope
+    body->Evaluate(scope);
+    // TODO: Extract return
+    return Value();
   }
 };
 
@@ -422,6 +448,18 @@ struct FunctionCallNode : public ExpressionNode {
     }
     visitor->exit(*this);
   }
+
+  virtual Value Evaluate(Scope* scope) const {
+    const FunctionNode* function = scope->functions[function_name.value];
+    Scope func_scope(*scope);
+    // Declaration and bound args should match
+    CHECK(arguments.size() == function->arguments.size());
+    for (int i = 0; i < arguments.size(); ++i) {
+      func_scope.variables[function->arguments[i].value] =
+          arguments[i]->Evaluate(scope);
+    }
+    return function->Evaluate(&func_scope);
+  }
 };
 
 struct BooleanOperatorNode : public ExpressionNode {
@@ -444,6 +482,23 @@ struct BooleanOperatorNode : public ExpressionNode {
     right->Visit(visitor);
     visitor->exit(*this);
   }
+
+  virtual Value Evaluate(Scope* scope) const {
+    const Value left_value = left->Evaluate(scope);
+    const Value right_value = right->Evaluate(scope);
+
+    switch (op.type) {
+      case Token::Type::OpPlus:
+        return left_value + right_value;
+      case Token::Type::OpMinus:
+        return left_value - right_value;
+      case Token::Type::OpGreaterThan:
+        return left_value > right_value ? 1 : 0;
+      default:
+        throw Panic(std::string("Unhandled boolean operator" +
+                                Token::TypeToString(op.type)));
+    }
+  }
 };
 
 struct VariableNode : public ExpressionNode {
@@ -454,6 +509,10 @@ struct VariableNode : public ExpressionNode {
     return std::string("VariableNode[") + identifier.ToString() +
            std::string("]");
   }
+
+  virtual Value Evaluate(Scope* scope) const {
+    return scope->variables[identifier.value];
+  }
 };
 
 struct LiteralNode : public ExpressionNode {
@@ -463,6 +522,8 @@ struct LiteralNode : public ExpressionNode {
   virtual std::string ToString() const override {
     return std::string("LiteralNode[") + literal.ToString() + std::string("]");
   }
+
+  virtual Value Evaluate(Scope* scope) const { return std::stoi(literal.value); }
 };
 
 struct WhileNode : public ASTNode {
@@ -479,6 +540,17 @@ struct WhileNode : public ASTNode {
     expression->Visit(visitor);
     body->Visit(visitor);
     visitor->exit(*this);
+  }
+
+  virtual Value Evaluate(Scope* scope) const {
+    for (;;) {
+      const Value condition = expression->Evaluate(scope);
+      if (!condition) {
+        break;
+      }
+      body->Evaluate(scope);
+    }
+    return Value();
   }
 };
 
@@ -499,6 +571,12 @@ struct AssignmentNode : public ASTNode {
     expression->Visit(visitor);
     visitor->exit(*this);
   }
+
+  virtual Value Evaluate(Scope* scope) const {
+    const Value val = expression->Evaluate(scope);
+    scope->variables[left.value] = val;
+    return val;
+  }
 };
 
 struct ReturnNode : public ASTNode {
@@ -512,6 +590,10 @@ struct ReturnNode : public ASTNode {
     visitor->enter(*this);
     expression->Visit(visitor);
     visitor->exit(*this);
+  }
+
+  virtual Value Evaluate(Scope* scope) const {
+    return expression->Evaluate(scope);
   }
 };
 
